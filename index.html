@@ -111,10 +111,14 @@ ul.rules li{margin:4px 0}
 </div></header>
 
 <main class="wrap">
+  <section class="screen on card" id="scrDashboard">
+    <h1>Choose your practice test</h1><p class="muted">Select one quiz. EH includes all 50 questions in a single attempt; unit names are shown for reporting only.</p>
+    <div class="row" style="gap:12px;flex-wrap:wrap"><button class="btn primary" id="chooseCSF">CSF Quiz</button><button class="btn primary" id="chooseEH">Ethical Hacking Quiz</button></div>
+  </section>
   <div class="banner" id="demoBanner"><b>Demo mode:</b> no backend connected. Any roll number and email work, and the OTP is <b>123456</b>. No email is sent and nothing is saved.</div>
 
   <!-- LOGIN -->
-  <section class="screen on card" id="scrLogin">
+  <section class="screen card" id="scrLogin">
     <h1>Sign in to start</h1>
     <p class="muted">Enter your roll number, name and email address. We will email you a 6-digit OTP to confirm it is really you.</p>
     <label for="roll">Roll number</label>
@@ -222,13 +226,14 @@ ul.rules li{margin:4px 0}
 </div></div>
 
 <script src="config.js"></script>
-<script src="questions.js"></script>
+<script src="questions-csf.js"></script>
 <script>
 (function () {
   "use strict";
   var C = window.CONFIG || {}, Q = window.QUESTIONS || [], U = window.UNITS || {};
+  var SUBJECT = "CSF";
   var DEMO = !C.API_URL;
-  var KEY = "csf_state_v1";
+  var KEY = "practice_state_v2_" + SUBJECT;
   var DUR = (C.DURATION_MIN || 60) * 60 * 1000;
   var byId = {}; Q.forEach(function (q) { byId[q.id] = q; });
   var S = { token: "", roll: "", name: "", email: "", order: [], answers: {}, flags: {}, idx: 0, startAt: 0, endAt: 0 };
@@ -237,7 +242,7 @@ ul.rules li{margin:4px 0}
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function show(id) {
-    ["scrLogin", "scrOtp", "scrIntro", "scrQuiz", "scrResult"].forEach(function (s) { $(s).classList.toggle("on", s === id); });
+    ["scrDashboard", "scrLogin", "scrOtp", "scrIntro", "scrQuiz", "scrResult"].forEach(function (s) { $(s).classList.toggle("on", s === id); });
     $("timer").style.display = id === "scrQuiz" ? "block" : "none";
     window.scrollTo(0, 0);
   }
@@ -284,7 +289,7 @@ ul.rules li{margin:4px 0}
     if (!roll || !name || !email) { msg("msgLogin", "err", "Please enter roll number, name and email."); return; }
     if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]{2,}$/.test(email)) { msg("msgLogin", "err", "That email address does not look right. Please check it."); return; }
     var btn = $("btnSend"); btn.disabled = true; msg("msgLogin", "info", "Sending OTP...");
-    api("requestOtp", { roll: roll, name: name, email: email }).then(function (r) {
+    api("requestOtp", { roll: roll, name: name, email: email, subject: SUBJECT }).then(function (r) {
       btn.disabled = false;
       if (!r.ok) { msg("msgLogin", "err", r.error || "Could not send OTP."); msg("msgOtp", "err", isResend ? (r.error || "") : ""); return; }
       S.roll = roll; S.name = name; S.email = email; msg("msgLogin", "", "");
@@ -297,7 +302,7 @@ ul.rules li{margin:4px 0}
     var otp = $("otp").value.trim();
     if (!/^\d{6}$/.test(otp)) { msg("msgOtp", "err", "Enter the 6-digit OTP."); return; }
     var btn = $("btnVerify"); btn.disabled = true; msg("msgOtp", "info", "Verifying...");
-    api("verifyOtp", { roll: S.roll, name: S.name, email: S.email, otp: otp }).then(function (r) {
+    api("verifyOtp", { roll: S.roll, name: S.name, email: S.email, otp: otp, subject: SUBJECT }).then(function (r) {
       btn.disabled = false;
       if (!r.ok) { msg("msgOtp", "err", r.error || "Verification failed."); return; }
       S.token = r.token; if (r.name) S.name = r.name; save(); msg("msgOtp", "", ""); toIntro();
@@ -326,7 +331,7 @@ ul.rules li{margin:4px 0}
   function curQ() { return byId[S.order[S.idx]]; }
   function renderQ() {
     var q = curQ(), total = S.order.length;
-    $("qUnit").textContent = "Unit " + q.unit + ": " + U[q.unit];
+    $("qUnit").textContent = (SUBJECT === "EH" ? "Ethical Hacking" : "Unit " + q.unit + ": " + U[q.unit]);
     $("qCount").textContent = "Question " + (S.idx + 1) + " of " + total;
     $("qBar").style.width = ((S.idx + 1) / total * 100) + "%";
     $("qText").textContent = q.q;
@@ -372,7 +377,7 @@ ul.rules li{margin:4px 0}
     var secs = Math.min(Math.round((Date.now() - S.startAt) / 1000), Math.round(DUR / 1000));
     msg("msgQuiz", "info", auto ? "Time is up. Submitting your answers..." : "Submitting your answers...");
     $("btnSubmit").disabled = true;
-    api("submit", { token: S.token, roll: S.roll, answers: S.answers, secondsTaken: secs }).then(function (r) {
+    api("submit", { token: S.token, roll: S.roll, answers: S.answers, secondsTaken: secs, subject: SUBJECT }).then(function (r) {
       $("btnSubmit").disabled = false;
       if (!r.ok) {
         submitting = false;
@@ -398,7 +403,7 @@ ul.rules li{margin:4px 0}
     Object.keys(U).forEach(function (u) {
       var tot = Q.filter(function (q) { return String(q.unit) === String(u); }).length, got = (R.perUnit && R.perUnit[u]) || 0;
       var d = document.createElement("div"); d.className = "ubar";
-      d.innerHTML = '<div class="l"><span>Unit ' + esc(u) + ': ' + esc(U[u]) + '</span><b>' + got + ' / ' + tot + '</b></div><div class="t"><i style="width:' + (tot ? got / tot * 100 : 0) + '%"></i></div>';
+      d.innerHTML = '<div class="l"><span>' + (SUBJECT === 'EH' ? esc(U[u]) : ('Unit ' + esc(u) + ': ' + esc(U[u]))) + '</span><b>' + got + ' / ' + tot + '</b></div><div class="t"><i style="width:' + (tot ? got / tot * 100 : 0) + '%"></i></div>';
       ub.appendChild(d);
     });
     var list = $("rvList"); list.innerHTML = ""; list.className = "list";
@@ -421,6 +426,25 @@ ul.rules li{margin:4px 0}
   }
 
   /* ---------- wiring ---------- */
+  function selectSubject(subject) {
+    SUBJECT = subject; KEY = "practice_state_v2_" + SUBJECT;
+    function applyBank() {
+      Q = subject === "EH" ? (window.EH_QUESTIONS || []) : (window.QUESTIONS || []);
+      U = subject === "EH" ? (window.EH_UNITS || {}) : (window.UNITS || {});
+      byId = {}; Q.forEach(function(q){ byId[q.id] = q; });
+      C.EXAM_TITLE = subject === "EH" ? "Ethical Hacking Practice Test" : "CSF Practice Test";
+      C.SUBTITLE = subject === "EH" ? "Ethical Hacking & Pen Testing | 50 Questions" : "Cybersecurity Fundamentals and Network Security | MCA Sem 3";
+      $("brandTitle").textContent = C.EXAM_TITLE; $("brandSub").textContent = C.SUBTITLE; document.title = C.EXAM_TITLE;
+      $("rQ").textContent = Q.length; show("scrLogin");
+    }
+    if (subject === "CSF") { applyBank(); return; }
+    if (window.EH_QUESTIONS) { applyBank(); return; }
+    var sc = document.createElement("script"); sc.src = "eh-questions.js"; sc.onload = applyBank;
+    sc.onerror = function(){ alert("Could not load eh-questions.js. Check that file is published."); };
+    document.head.appendChild(sc);
+  }
+  $("chooseCSF").addEventListener("click", function(){ selectSubject("CSF"); });
+  $("chooseEH").addEventListener("click", function(){ selectSubject("EH"); });
   $("brandTitle").textContent = C.EXAM_TITLE || "Practice Test"; $("brandSub").textContent = C.SUBTITLE || "";
   document.title = C.EXAM_TITLE || "Practice Test";
   if (DEMO) $("demoBanner").style.display = "block";
